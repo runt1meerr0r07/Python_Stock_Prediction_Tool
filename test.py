@@ -2,9 +2,33 @@ import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
 from PIL import Image, ImageTk
+import sys
+import os
+import threading
 
 def button_clicked(name):
     print(f"{name} button clicked")
+    if name == "Stock":
+        threading.Thread(target=launch_stock_dashboard).start()
+
+
+def launch_stock_dashboard():
+   
+    sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+    
+    try:
+        from PyQt6.QtWidgets import QApplication
+        from stock.stock_page import StockPage
+        
+        app = QApplication.instance()
+        if app is None:
+            app = QApplication([])
+        
+        window = StockPage("RELIANCE.NS")
+        window.show()
+        app.exec()
+    except Exception as e:
+        print(f"Error launching stock dashboard: {e}")
 
 # Initialize main window
 root = tk.Tk()
