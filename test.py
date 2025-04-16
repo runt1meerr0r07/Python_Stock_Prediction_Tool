@@ -9,49 +9,50 @@ from yahoo_fin import news
 import threading
 import sys
 import os
-
-
+import subprocess
 
 def show_page(page):
-    """Show the requested page and hide all others."""
     for frame in [content_frame, news_page]:
-        frame.pack_forget()  # Hide all pages
-
-    page.pack(fill=tk.BOTH, expand=True)  # Show the requested page
-
-
+        frame.pack_forget()
+    page.pack(fill=tk.BOTH, expand=True)
 
 def button_clicked(name):
     print(f"{name} button clicked")
     if name == "Stock":
-        threading.Thread(target=launch_stock_dashboard).start()
+        threading.Thread(target=launch_stock_dashboard, daemon=True).start()
     elif name == "News":
-        show_page(news_page)  # Show News Page
+        show_page(news_page)
+
 
 def launch_stock_dashboard():
     sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
-    
     try:
-        from PyQt6.QtWidgets import QApplication
-        from stock.stock_page import StockPage
         
-        app = QApplication.instance()
-        if app is None:
-            app = QApplication([])
-
-        window = StockPage("RELIANCE.NS")
-        window.show()
-        app.exec()
+        loading_label = tk.Label(root, text="Loading Stock Dashboard...", font=("Arial", 18), bg='white')
+        loading_label.place(relx=0.5, rely=0.5, anchor='center')
+        root.update()
+        
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'stock', 'run_stock_dashboard.py')
+        
+        
+        if not os.path.exists(script_path):
+            raise FileNotFoundError(f"Could not find {script_path}")
+        
+        process = subprocess.Popen([sys.executable, script_path], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP)
+        
+        root.after(1500, loading_label.destroy)
+        
     except Exception as e:
         print(f"Error launching stock dashboard: {e}")
         messagebox.showerror("Error", f"Failed to launch stock dashboard: {e}")
+        for widget in root.winfo_children():
+            if isinstance(widget, tk.Label) and widget.cget("text") == "Loading Stock Dashboard...":
+                widget.destroy()
 
 root = tk.Tk()
 root.title("ABC Stock Advisor")
-root.state('zoomed')  # Open in full screen
+root.state('zoomed')
 root.configure(bg='white')
-
-
 
 header = tk.Frame(root, bg='gray', height=100)
 header.pack(fill=tk.X)
@@ -61,7 +62,6 @@ app_name.pack(side=tk.LEFT, padx=20, pady=20)
 
 button_frame = tk.Frame(header, bg='gray')
 button_frame.pack(side=tk.RIGHT, padx=10)
-
 
 icon_size = (40, 40)
 icons = {
@@ -87,8 +87,6 @@ for name, icon_path in icons.items():
     button.image = icon
     button.pack()
 
-# ------------------------ Main Dashboard Page ------------------------
-
 content_frame = tk.Frame(root, bg='white', padx=50, pady=50)
 content_frame.pack(expand=True, fill=tk.BOTH)
 
@@ -101,8 +99,6 @@ description_label.pack(anchor='w', pady=5)
 invest_button = tk.Button(content_frame, text="Start Investing", font=("Arial", 16, "bold"), bg='black', fg='white', padx=20, pady=10)
 invest_button.pack(anchor='w', pady=20)
 
-
-
 news_page = tk.Frame(root, bg='white')
 
 news_title = tk.Label(news_page, text="📈 Latest Stock News", font=("Arial", 24, "bold"), bg='white', fg='black', padx=20, pady=10)
@@ -111,68 +107,51 @@ news_title.pack()
 news_content = tk.Frame(news_page, bg='white')
 news_content.pack(fill=tk.BOTH, expand=True, padx=20, pady=10)
 
-
 DEFAULT_IMAGE_URL = "https://www.publicdomainpictures.net/pictures/320000/velka/stock-market-chart.jpg"
 
 def get_news_image(query):
-    """Fetch an image based on the stock news title."""
     try:
         search_url = f"https://www.bing.com/images/search?q={query.replace(' ', '+')}+stock+news"
         response = requests.get(search_url)
-        image_url = DEFAULT_IMAGE_URL  # Use default image if search fails
+        image_url = DEFAULT_IMAGE_URL
     except:
-        image_url = DEFAULT_IMAGE_URL  # Fallback
-
+        image_url = DEFAULT_IMAGE_URL
     return image_url
 
 def fetch_stock_news():
-    """Fetch and display stock news from Yahoo Finance."""
     stock_ticker = "AAPL"
     articles = news.get_yf_rss(stock_ticker)
-
-    # Clear old news
     for widget in news_content.winfo_children():
         widget.destroy()
-
     if not articles:
         tk.Label(news_content, text="No news available. Check Yahoo Finance.", fg="red", bg="white").pack()
         return
-
-    # Display top 10 news articles
     for article in articles[:10]:
         title = article["title"]
         link = article["link"]
         image_url = get_news_image(title)
-
         try:
             img_data = requests.get(image_url, stream=True).content
             image = Image.open(BytesIO(img_data)).resize((120, 80))
             img_tk = ImageTk.PhotoImage(image)
         except:
             img_tk = None
-
         news_item = tk.Frame(news_content, bg="white", pady=10, relief="solid", borderwidth=1)
         news_item.pack(fill=tk.X, padx=10, pady=5)
-
         if img_tk:
             img_label = tk.Label(news_item, image=img_tk, bg="white")
             img_label.image = img_tk
             img_label.pack(side=tk.LEFT, padx=10)
-
         news_label = tk.Label(news_item, text=title, font=("Arial", 14, "bold"), fg="blue", cursor="hand2", bg="white", wraplength=600, justify="left")
         news_label.pack(side=tk.LEFT, anchor="w", padx=10)
         news_label.bind("<Button-1>", lambda e, url=link: webbrowser.open(url))
 
-
-
 def auto_refresh_news():
     fetch_stock_news()
-    root.after(60000, auto_refresh_news)  # Refresh every 1 min
+    root.after(60000, auto_refresh_news)
 
 fetch_stock_news()
 auto_refresh_news()
-
-
 
 marquee_frame = tk.Frame(root, bg='black', height=30)
 marquee_frame.pack(fill=tk.X, side=tk.BOTTOM)
@@ -190,8 +169,6 @@ def scroll_text():
     canvas.after(50, scroll_text)
 
 scroll_text()
-
-
 
 show_page(content_frame)
 root.mainloop()

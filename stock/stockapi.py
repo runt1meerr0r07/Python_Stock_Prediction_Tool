@@ -1,43 +1,210 @@
 import yfinance as yf
-import pandas as pd
 import numpy as np
+import pandas as pd
+import time
+import os
+import json
+import threading
 
-def fetch_stock_data(symbol="RELIANCE.NS"):
-    
-    if not (symbol.endswith('.NS') or symbol.endswith('.BO')):
-        symbol = f"{symbol}.NS"
-    
-    stock = yf.Ticker(symbol)
-    hist = stock.history(period="1y")  
-    
-    if hist.empty:
-        return None  
+# Cache settings
+CACHE_DIR = os.path.join(os.path.dirname(__file__), 'cache')
+CACHE_DURATION = 600  # Cache validity in seconds (10 minutes)
 
-    return {
-        "price": round(hist["Close"].iloc[-1], 2),
-        "historical_prices": hist["Close"].tolist(),
-        "volume": hist["Volume"].iloc[-1],
-        "sma_20": hist["Close"].rolling(window=20).mean().iloc[-1],
-        "sma_50": hist["Close"].rolling(window=50).mean().iloc[-1],
-        "sma_200": hist["Close"].rolling(window=200).mean().iloc[-1],
-        "rsi": calculate_rsi(hist["Close"]),
-        "currency": "₹", 
+# Create cache directory if it doesn't exist
+if not os.path.exists(CACHE_DIR):
+    os.makedirs(CACHE_DIR)
+
+# In-memory cache for even faster access during a session
+_memory_cache = {}
+_cache_lock = threading.Lock()
+
+def _get_cache_path(symbol, period):
+    """Get the cache file path for a stock symbol and period"""
+    return os.path.join(CACHE_DIR, f"{symbol}_{period}.json")
+
+def _cache_data(symbol, period, data):
+    """Cache stock data to both memory and disk"""
+    if data is None:
+        return
+    
+    cache_entry = {
+        'timestamp': time.time(),
+        'data': data
     }
+    
+    # Update memory cache
+    with _cache_lock:
+        _memory_cache[f"{symbol}_{period}"] = cache_entry
+    
+    # Write to disk cache
+    try:
+        with open(_get_cache_path(symbol, period), 'w') as f:
+            json.dump(cache_entry, f)
+    except Exception as e:
+        print(f"Error writing cache for {symbol}: {e}")
 
-def calculate_rsi(prices, window=14):
-    delta = prices.diff()
-    gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=window).mean()
-    rs = gain / loss
-    return round(100 - (100 / (1 + rs)).iloc[-1], 2)
+def _get_cached_data(symbol, period, validate_only=False):
+    """Get cached data if it exists and is valid"""
+    cache_key = f"{symbol}_{period}"
+    
+    # First check memory cache
+    with _cache_lock:
+        if cache_key in _memory_cache:
+            cache_entry = _memory_cache[cache_key]
+            if time.time() - cache_entry['timestamp'] < CACHE_DURATION:
+                # For validation checks, we need less data
+                if validate_only and 'data' in cache_entry and cache_entry['data']:
+                    return {'valid': True}
+                return cache_entry['data']
+    
+    # Then check disk cache
+    cache_path = _get_cache_path(symbol, period)
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, 'r') as f:
+                cache_entry = json.load(f)
+                
+            if time.time() - cache_entry['timestamp'] < CACHE_DURATION:
+                # Update memory cache with disk data
+                with _cache_lock:
+                    _memory_cache[cache_key] = cache_entry
+                
+                # For validation checks, we need less data
+                if validate_only and 'data' in cache_entry and cache_entry['data']:
+                    return {'valid': True}
+                return cache_entry['data']
+        except Exception as e:
+            print(f"Error reading cache for {symbol}: {e}")
+    
+    return None
+
+def fetch_stock_data(symbol, period="1mo", validate_only=False):
+    """Fetch stock data with caching for better performance"""
+    cached_data = _get_cached_data(symbol, period, validate_only)
+    if cached_data is not None:
+        return cached_data
+    
+    try:
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        
+        if not info or 'regularMarketPrice' not in info:
+            print(f"API failed for {symbol}, using fallback data")
+            fallback_data = generate_fallback_data(symbol, period)
+            return fallback_data
+            
+        print(f"Fetching fresh data for {symbol} (period: {period})")
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        
+        if not info:
+            print(f"No info returned for {symbol}")
+            if validate_only:
+                return {'valid': False}
+            return None
+            
+        if 'regularMarketPrice' not in info:
+            print(f"No price data found for {symbol}. Available keys: {list(info.keys())[:5]}...")
+            if validate_only:
+                return {'valid': False}
+            return None
+            
+        if validate_only:
+            result = {'valid': True}
+            _cache_data(symbol, period, result)
+            return result
+            
+        currency = info.get('currency', 'INR')
+        if currency == 'INR':
+            currency_symbol = '₹'
+        elif currency == 'USD':
+            currency_symbol = '$'
+        else:
+            currency_symbol = currency
+            
+        current_price = info.get('regularMarketPrice', 0)
+        if not current_price and 'currentPrice' in info:
+            current_price = info['currentPrice']
+            
+        hist = stock.history(period=period)
+        
+        if len(hist) < 2:
+            print(f"Not enough historical data for {symbol}")
+            return None
+            
+        try:
+            sma_20 = hist['Close'].rolling(window=20).mean().iloc[-1]
+        except:
+            sma_20 = float('nan')
+            
+        try:
+            sma_50 = hist['Close'].rolling(window=50).mean().iloc[-1]
+        except:
+            sma_50 = float('nan')
+            
+        try:
+            sma_200 = hist['Close'].rolling(window=200).mean().iloc[-1]
+        except:
+            sma_200 = float('nan')
+            
+        delta = hist['Close'].diff()
+        gain = delta.where(delta > 0, 0).rolling(window=14).mean()
+        loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
+        
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs)).iloc[-1]
+        
+        historical_prices = hist['Close'].values.tolist()
+        
+        historical_dates = [str(date) for date in hist.index.tolist()]  # Convert dates to strings for JSON serialization
+        
+        ohlc_data = {
+            'Open': hist['Open'].values.tolist(),
+            'High': hist['High'].values.tolist(),
+            'Low': hist['Low'].values.tolist(),
+            'Close': hist['Close'].values.tolist(),
+            'Volume': hist['Volume'].values.tolist(),
+            'index': [str(date) for date in hist.index.tolist()]
+        }
+        
+        volume = hist['Volume'].iloc[-1]
+        
+        result = {
+            'symbol': symbol,
+            'price': current_price,
+            'currency': currency_symbol,
+            'historical_prices': historical_prices,
+            'historical_dates': historical_dates,
+            'sma_20': float(sma_20) if not np.isnan(sma_20) else None,
+            'sma_50': float(sma_50) if not np.isnan(sma_50) else None,
+            'sma_200': float(sma_200) if not np.isnan(sma_200) else None,
+            'rsi': float(rsi) if not np.isnan(rsi) else 50.0,
+            'volume': int(volume),
+            'ohlc_data': ohlc_data
+        }
+        
+        # Cache the result for future use
+        _cache_data(symbol, period, result)
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error fetching stock data for {symbol}: {e}")
+        return None
+
+def clear_cache():
+    """Clear all cached stock data"""
+    with _cache_lock:
+        _memory_cache.clear()
+    
+    try:
+        for filename in os.listdir(CACHE_DIR):
+            file_path = os.path.join(CACHE_DIR, filename)
+            if os.path.isfile(file_path):
+                os.unlink(file_path)
+    except Exception as e:
+        print(f"Error clearing cache: {e}")
 
 if __name__ == "__main__":
-    symbol = "RELIANCE.NS"  
-    stock_data = fetch_stock_data(symbol)
-    
-    if stock_data:
-        print(f"Stock Data for {symbol}:")
-        for key, value in stock_data.items():
-            print(f"{key}: {value}")
-    else:
-        print("Failed to fetch stock data.")
+    data = fetch_stock_data("RELIANCE.NS")
+    print(data)

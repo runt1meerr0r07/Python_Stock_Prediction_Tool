@@ -3,96 +3,133 @@ import pandas as pd
 from stock.stockapi import fetch_stock_data
 
 def calculate_bollinger_bands(prices, window=20):
-    sma = prices.rolling(window=window).mean()
-    std = prices.rolling(window=window).std()
+    """Calculate Bollinger Bands for a price series"""
+    prices_series = pd.Series(prices)
+    sma = prices_series.rolling(window=window).mean()
+    std = prices_series.rolling(window=window).std()
     upper_band = sma + (2 * std)
     lower_band = sma - (2 * std)
-    return upper_band.iloc[-1], lower_band.iloc[-1]
+    
+    if len(upper_band) > 0 and len(lower_band) > 0:
+        return upper_band.iloc[-1], lower_band.iloc[-1]
+    return None, None
 
 def calculate_rsi(prices, window=14):
-    delta = prices.diff()
-    gain = delta.where(delta > 0, 0).rolling(window=window).mean()
-    loss = -delta.where(delta < 0, 0).rolling(window=window).mean()
-    rs = gain / loss
-    return round(100 - (100 / (1 + rs)).iloc[-1], 2)
+    """Calculate RSI for a price series"""
+    prices_series = pd.Series(prices)
+    delta = prices_series.diff()
+    
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+  
+    avg_gain = gain.rolling(window=window).mean()
+    avg_loss = loss.rolling(window=window).mean()
+    
+    
+    rs = avg_gain / avg_loss
+    
+    rsi = 100 - (100 / (1 + rs))
+    
+    if len(rsi) > 0:
+        return round(rsi.iloc[-1], 2)
+    return 50  
 
 def predict_stock(symbol="RELIANCE.NS"):
+    """Generate stock prediction based on technical indicators"""
     data = fetch_stock_data(symbol)
     if data is None:
         return None
 
-    prices = pd.Series(data["historical_prices"])
+    prices = data.get("historical_prices", [])
+    if not prices:
+        return None
+        
+    volumes = data.get("volumes", [])
+    
    
+    prices_series = pd.Series(prices)
+    
+    current_price = data.get('price', 0)
+    if current_price is None:
+        current_price = 0
+        
+    sma_20 = data.get('sma_20', current_price)
+    if sma_20 is None:
+        sma_20 = current_price
+        
+    sma_50 = data.get('sma_50', current_price)
+    if sma_50 is None:
+        sma_50 = current_price
+        
+    sma_200 = data.get('sma_200', current_price)
+    if sma_200 is None:
+        sma_200 = current_price
+    
+    
+    rsi = data.get('rsi')
+    if rsi is None:
+        rsi = calculate_rsi(prices)
+    
+    
     upper_band, lower_band = calculate_bollinger_bands(prices)
-    rsi = calculate_rsi(prices)
-    sma_20 = data["sma_20"]
-    sma_50 = data["sma_50"]
-    sma_200 = data["sma_200"]
-    volume = data["volume"]
+    if upper_band is None or lower_band is None:
+        upper_band = sma_20 * 1.05  
+        lower_band = sma_20 * 0.95  
+    
+    score = 0
+    
+    if current_price <= lower_band:
+        score += 0.3  
+    elif current_price >= upper_band:
+        score -= 0.3  
+    
 
-    
-    score_components = {
-        "bollinger": 0,
-        "rsi": 0,
-        "ma_cross": 0,
-        "volume": 0
-    }
-    
-    if prices.iloc[-1] <= lower_band:
-        score_components["bollinger"] = 0.3
-    elif prices.iloc[-1] >= upper_band:
-        score_components["bollinger"] = -0.3
-        
-  
     if rsi < 30:
-        score_components["rsi"] = 0.25
+        score += 0.25  
     elif rsi > 70:
-        score_components["rsi"] = -0.25
-        
+        score -= 0.25  
     
     if sma_50 > sma_200:
-        score_components["ma_cross"] = 0.25
+        score += 0.25 
     elif sma_50 < sma_200:
-        score_components["ma_cross"] = -0.25
-        
+        score -= 0.25  
     
-    avg_volume = np.mean(prices.rolling(window=30).mean())
-    if volume > 1.5 * avg_volume:
-        score_components["volume"] = 0.2
-
+    if volumes and len(volumes) > 10:
+        avg_volume = sum(volumes[-10:]) / 10
+        latest_volume = volumes[-1]
+        if latest_volume > (1.5 * avg_volume):
+            score += 0.2  # Bullish - high volume
     
-    score = sum(score_components.values())
 
-
-    if score >= 0.5:  
+    if score >= 0.5:
         prediction = "Strong Buy"
-        target_price = sma_20 + (0.7 * np.std(prices))  
-    elif 0.15 <= score < 0.5:  
+    elif score >= 0.15:
         prediction = "Buy"
-        target_price = sma_20 + (0.3 * np.std(prices))  
-    elif -0.15 < score < 0.15:  
+    elif score > -0.15:
         prediction = "Hold"
-        target_price = prices.iloc[-1]
-    elif -0.5 < score <= -0.15:  
+    elif score > -0.5:
         prediction = "Sell"
-        target_price = sma_20 - (0.3 * np.std(prices))  
     else:
         prediction = "Strong Sell"
-        target_price = sma_20 - (0.7 * np.std(prices)) 
+    
 
+    price_std = prices_series.std() if len(prices_series) > 1 else current_price * 0.05
+
+    if prediction == "Strong Buy":
+        target_price = sma_20 + (0.7 * price_std)
+    elif prediction == "Buy":
+        target_price = sma_20 + (0.3 * price_std)
+    elif prediction == "Hold":
+        target_price = current_price
+    elif prediction == "Sell":
+        target_price = sma_20 - (0.3 * price_std)
+    else: 
+        target_price = sma_20 - (0.7 * price_std)
+    
     return {
         "prediction": prediction,
-        "score": round(score, 2),
-        "score_breakdown": score_components,
-        "target_price": round(target_price, 2),
-        "indicators": {
-            "rsi": rsi,
-            "upper_band": round(upper_band, 2),
-            "lower_band": round(lower_band, 2),
-            "sma_20": round(sma_20, 2),
-            "sma_50": round(sma_50, 2),
-            "sma_200": round(sma_200, 2)
-        }
+        "score": score,
+        "target_price": target_price
     }
 
 if __name__ == "__main__":
