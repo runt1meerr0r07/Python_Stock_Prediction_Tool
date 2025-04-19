@@ -10,18 +10,19 @@ import threading
 import sys
 import os
 import subprocess
+from stock.ui.portfolio_window import PortfolioWindow  # Import the new PortfolioWindow class
+
 
 def show_page(page):
     for frame in [content_frame, news_page]:
         frame.pack_forget()
     page.pack(fill=tk.BOTH, expand=True)
 
-def button_clicked(name):
-    print(f"{name} button clicked")
-    if name == "Stock":
-        threading.Thread(target=launch_stock_dashboard, daemon=True).start()
-    elif name == "News":
-        show_page(news_page)
+
+def launch_test_script():
+    script_path = os.path.join(os.path.dirname(__file__), 'test.py')
+    print(f"Launching: {sys.executable} {script_path}")
+    subprocess.Popen([sys.executable, script_path])
 
 
 def launch_stock_dashboard():
@@ -49,6 +50,32 @@ def launch_stock_dashboard():
             if isinstance(widget, tk.Label) and widget.cget("text") == "Loading Stock Dashboard...":
                 widget.destroy()
 
+def button_clicked(name):
+    print(f"{name} button clicked")
+    if name == "Stock":
+        threading.Thread(target=launch_stock_dashboard, daemon=True).start()
+    elif name == "News":
+        show_page(news_page)
+    elif name == "Portfolio":
+        try:
+            print("Opening PortfolioWindow...")
+            from PyQt6.QtWidgets import QApplication
+            import sys
+
+            # Create a new QApplication instance if one doesn't already exist
+            if not QApplication.instance():
+                app = QApplication(sys.argv)
+            else:
+                app = QApplication.instance()
+
+            portfolio_window = PortfolioWindow()  # Create the PortfolioWindow instance
+            portfolio_window.exec()  # Show the window modally
+            print("PortfolioWindow opened successfully.")
+        except Exception as e:
+            print(f"Error opening PortfolioWindow: {e}")
+
+
+
 root = tk.Tk()
 root.title("ABC Stock Advisor")
 root.state('zoomed')
@@ -69,7 +96,7 @@ icons = {
     "Portfolio": "portfolio.png",
     "News": "news.png",
     "Notification": "notification.png",
-    "Profile": "profile.png"
+    
 }
 
 for name, icon_path in icons.items():
