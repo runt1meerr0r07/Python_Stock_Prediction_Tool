@@ -15,7 +15,7 @@ try:
     print("Connected to SQLite database at", db.db_path)
     
     # Create schema if not exists
-    db.create_schema()
+    db.create_database_schema()
     print("SQLite database schema created successfully")
     
     # Create dummy user for testing if not exists
