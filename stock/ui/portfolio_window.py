@@ -170,10 +170,19 @@ class PortfolioWindow(QDialog):
         # Update balance and total assets after loading portfolio
         self.update_balance_and_assets()
 
+    def update_holdings_info(self):
+        """Update the holdings information in the portfolio table."""
+        self.load_portfolio()
+
+    def update_user_balance_display(self):
+        """Update the user's balance display."""
+        self.update_balance_and_assets()
+
     def open_sell_dialog(self, stock_ticker, max_quantity, current_price):
-        """Open a dialog to specify the quantity of stocks to sell."""
-        success = TransactionDialog.show_dialog(self, stock_ticker, current_price, "sell")
-        if success:
+     """Open a dialog to specify the quantity of stocks to sell."""
+     success = TransactionDialog.show_dialog(self, stock_ticker, current_price, "sell")
+     if success:
+            # Reload portfolio to reflect changes
             self.load_portfolio()
 
     def sell_all_stocks(self):
@@ -185,6 +194,8 @@ class PortfolioWindow(QDialog):
             current_price = self.get_current_price(stock_ticker)
             db.record_transaction(1, stock_ticker, "sell", quantity, current_price)
         QMessageBox.information(self, "Success", "All stocks sold successfully!")
+        
+        # Reload portfolio to reflect changes
         self.load_portfolio()
 
     def get_current_price(self, stock_ticker):
