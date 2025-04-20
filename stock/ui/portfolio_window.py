@@ -1,11 +1,11 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox, QHBoxLayout, QInputDialog
+    QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox, QHBoxLayout, QInputDialog, QHeaderView
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QMenuBar, QMenu 
 from stock.db_manager import db
-from PyQt6.QtGui import QAction
 from stock.stockapi import fetch_stock_data
+from PyQt6.QtWidgets import QMenuBar, QMenu 
+from PyQt6.QtGui import QAction
 from stock.ui.transaction import TransactionDialog  # Import the TransactionDialog for selling stocks
 
 
@@ -21,8 +21,6 @@ class PortfolioWindow(QDialog):
 
         # Layout
         layout = QVBoxLayout(self)
-      
-
         # Add Menu Bar
         self.menu_bar = QMenuBar(self)
         self.menu_bar.setStyleSheet("background-color: #3a3f48; color: white; font-size: 14px;")
@@ -32,8 +30,7 @@ class PortfolioWindow(QDialog):
         self.hamburger_menu = QMenu("☰", self)
         self.hamburger_menu.setStyleSheet("background-color: #3a3f48; color: white; font-size: 14px;")
         self.menu_bar.addMenu(self.hamburger_menu)
-
-        # Add Actions to Hamburger Menu
+         # Add Actions to Hamburger Menu
         self.change_username_action = QAction("Change Username", self)
         self.change_password_action = QAction("Change Password", self)
         self.logout_action = QAction("Logout", self)
@@ -54,23 +51,25 @@ class PortfolioWindow(QDialog):
         balance_layout.addWidget(self.total_assets_label)
         layout.addLayout(balance_layout)
 
-        # Title
-        title_label = QLabel("📊 Your Portfolio")
-        title_label.setStyleSheet("font-size: 24px; font-weight: bold; color: #e0e0e0;")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(title_label)
-
         # Portfolio Table
         self.portfolio_table = QTableWidget()
-        self.portfolio_table.setColumnCount(5)
-        self.portfolio_table.setHorizontalHeaderLabels(["Stock", "Current Price", "Change", "Quantity", "Sell"])
+        self.portfolio_table.setColumnCount(7)  # Add columns for "Add Note" and "View Note"
+        self.portfolio_table.setHorizontalHeaderLabels(["Stock", "Current Price", "Change", "Quantity", "Sell", "Add Note", "View Note"])
         self.portfolio_table.horizontalHeader().setStretchLastSection(True)
         self.portfolio_table.setStyleSheet(
             "QTableWidget { background-color: #2a2e39; gridline-color: #616161; }"
             "QHeaderView::section { background-color: #3a3f48; color: #e0e0e0; }"
             "QTableWidget::item { color: #e0e0e0;font-size: 20px; }"
         )
+        
+        # Set all columns to have equal width
+        header = self.portfolio_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
         layout.addWidget(self.portfolio_table)
+
+        # Notes Storage
+        self.notes = {}  # Dictionary to store notes for each stock
 
         # Deposit Button
         deposit_button = QPushButton("Deposit Money")
@@ -167,21 +166,50 @@ class PortfolioWindow(QDialog):
             sell_button.clicked.connect(lambda _, s=stock_ticker, q=quantity, p=current_price: self.open_sell_dialog(s, q, p))
             self.portfolio_table.setCellWidget(row, 4, sell_button)
 
+            # Add "Add Note" button
+            add_note_button = QPushButton("Add Note")
+            add_note_button.setStyleSheet(
+                "background-color: #007bff; color: white; font-weight: bold; padding: 5px 10px; border-radius: 3px;"
+            )
+            add_note_button.clicked.connect(lambda _, s=stock_ticker: self.add_note_for_stock(s))
+            self.portfolio_table.setCellWidget(row, 5, add_note_button)
+
+            # Add "View Note" button
+            view_note_button = QPushButton("View Note")
+            view_note_button.setStyleSheet(
+                "background-color: #6c757d; color: white; font-weight: bold; padding: 5px 10px; border-radius: 3px;"
+            )
+            view_note_button.clicked.connect(lambda _, s=stock_ticker: self.view_note_for_stock(s))
+            self.portfolio_table.setCellWidget(row, 6, view_note_button)
+
         # Update balance and total assets after loading portfolio
         self.update_balance_and_assets()
 
-    def update_holdings_info(self):
-        """Update the holdings information in the portfolio table."""
-        self.load_portfolio()
+    def add_note_for_stock(self, stock_ticker):
+        """Add a note for a specific stock."""
+        user_id = 1  # Replace with dynamic user ID if needed
+        note, ok = QInputDialog.getText(self, "Add Note", f"Enter a note for {stock_ticker}:")
+        if ok and note:
+            # Save the note to the database
+            success = db.save_stock_note(user_id, stock_ticker, note)
+            if success:
+                QMessageBox.information(self, "Success", f"Note added for {stock_ticker}!")
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to save note for {stock_ticker}.")
 
-    def update_user_balance_display(self):
-        """Update the user's balance display."""
-        self.update_balance_and_assets()
-
+    def view_note_for_stock(self, stock_ticker):
+        """View the note for a specific stock."""
+        user_id = 1  # Replace with dynamic user ID if needed
+        # Retrieve the note from the database
+        note = db.get_stock_note(user_id, stock_ticker)
+        if note:
+            QMessageBox.information(self, f"Note for {stock_ticker}", note)
+        else:
+            QMessageBox.information(self, f"Note for {stock_ticker}", "No notes available for this stock.")
     def open_sell_dialog(self, stock_ticker, max_quantity, current_price):
-     """Open a dialog to specify the quantity of stocks to sell."""
-     success = TransactionDialog.show_dialog(self, stock_ticker, current_price, "sell")
-     if success:
+        """Open a dialog to specify the quantity of stocks to sell."""
+        success = TransactionDialog.show_dialog(self, stock_ticker, current_price, "sell")
+        if success:
             # Reload portfolio to reflect changes
             self.load_portfolio()
 

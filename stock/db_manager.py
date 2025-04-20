@@ -57,6 +57,13 @@ class DatabaseManager:
                 transaction_date TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES user(user_id)
             )''')
+            cursor.execute( '''CREATE TABLE IF NOT EXISTS stock_notes (
+                user_id INTEGER NOT NULL,
+                stock_ticker TEXT NOT NULL,
+                note TEXT,
+                PRIMARY KEY (user_id, stock_ticker),
+                FOREIGN KEY (user_id) REFERENCES user (user_id) ON DELETE CASCADE
+                 )''')
 
             # Create watchlist table
             cursor.execute('''CREATE TABLE IF NOT EXISTS watchlist (
@@ -205,7 +212,33 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error registering user: {e}")
             return False
+        
+    def save_stock_note(self, user_id, stock_ticker, note):
+            """Save a note for a specific stock."""
+            try:
+                query = """
+                INSERT INTO stock_notes (user_id, stock_ticker, note)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, stock_ticker) DO UPDATE SET note = excluded.note
+                """
+                self.execute_query(query, (user_id, stock_ticker, note))
+                return True
+            except Exception as e:
+                print(f"Error saving note for {stock_ticker}: {e}")
+                return False
 
+        
+    def get_stock_note(self, user_id, stock_ticker):
+        """Retrieve the note for a specific stock."""
+        try:
+            query = "SELECT note FROM stock_notes WHERE user_id = ? AND stock_ticker = ?"
+            result = self.execute_query(query, (user_id, stock_ticker), fetch=True)
+            if result:
+                return result[0]['note']
+            return None
+        except Exception as e:
+            print(f"Error retrieving note for {stock_ticker}: {e}")
+            return None
 
 # Initialize database manager
 db = DatabaseManager()
