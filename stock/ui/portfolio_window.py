@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox, QHBoxLayout, QInputDialog, QHeaderView
+    QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QPushButton, QMessageBox, QHBoxLayout, QInputDialog, QHeaderView, QTabWidget, QWidget
 )
 from PyQt6.QtCore import Qt
 from stock.db_manager import db
@@ -51,6 +51,33 @@ class PortfolioWindow(QDialog):
         balance_layout.addWidget(self.total_assets_label)
         layout.addLayout(balance_layout)
 
+        # Create tab widget for Portfolio and Favorites
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("""
+            QTabWidget::pane {
+                border: 1px solid #616161;
+                background-color: #2a2e39;
+            }
+            QTabBar::tab {
+                background-color: #3a3f48;
+                color: #e0e0e0;
+                padding: 8px 15px;
+                margin-right: 3px;
+            }
+            QTabBar::tab:selected {
+                background-color: #00b248;
+                color: white;
+                font-weight: bold;
+            }
+            QTabBar::tab:hover:!selected {
+                background-color: #4a4f58;
+            }
+        """)
+        
+        # Create Portfolio Tab
+        portfolio_tab = QWidget()
+        portfolio_layout = QVBoxLayout(portfolio_tab)
+        
         # Portfolio Table
         self.portfolio_table = QTableWidget()
         self.portfolio_table.setColumnCount(7)  # Add columns for "Add Note" and "View Note"
@@ -66,7 +93,39 @@ class PortfolioWindow(QDialog):
         header = self.portfolio_table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         
-        layout.addWidget(self.portfolio_table)
+        portfolio_layout.addWidget(self.portfolio_table)
+        
+        # Create Favorites Tab
+        favorites_tab = QWidget()
+        favorites_layout = QVBoxLayout(favorites_tab)
+        
+        # Favorites Header
+        favorites_header = QLabel("Your Favorite Stocks")
+        favorites_header.setStyleSheet("font-size: 18px; font-weight: bold; color: #00b248; margin-bottom: 10px;")
+        favorites_layout.addWidget(favorites_header)
+        
+        # Favorites Table
+        self.favorites_table = QTableWidget()
+        self.favorites_table.setColumnCount(6)
+        self.favorites_table.setHorizontalHeaderLabels(["Stock", "Current Price", "Prediction", "Target Price", "Score", "Remove"])
+        self.favorites_table.horizontalHeader().setStretchLastSection(True)
+        self.favorites_table.setStyleSheet(
+            "QTableWidget { background-color: #2a2e39; gridline-color: #616161; }"
+            "QHeaderView::section { background-color: #3a3f48; color: #e0e0e0; }"
+            "QTableWidget::item { color: #e0e0e0; font-size: 16px; }"
+        )
+        
+        # Set all columns to have equal width
+        favorites_header = self.favorites_table.horizontalHeader()
+        favorites_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        
+        favorites_layout.addWidget(self.favorites_table)
+        
+        # Add tabs to tab widget
+        self.tab_widget.addTab(portfolio_tab, "Portfolio")
+        self.tab_widget.addTab(favorites_tab, "Favorites")
+        
+        layout.addWidget(self.tab_widget)
 
         # Notes Storage
         self.notes = {}  # Dictionary to store notes for each stock
@@ -89,6 +148,9 @@ class PortfolioWindow(QDialog):
 
         # Load Portfolio Data
         self.load_portfolio()
+        
+        # Load Favorites Data
+        self.load_favorites()
 
     def update_balance_and_assets(self):
         """Update the balance and total assets labels."""
@@ -250,3 +312,75 @@ class PortfolioWindow(QDialog):
         except Exception as e:
             print(f"Error fetching price change for {stock_ticker}: {e}")
             return 0.0
+
+    def load_favorites(self):
+        """Load user's favorite stocks data into the table."""
+        self.favorites_table.setRowCount(0)  # Clear existing rows
+        user_id = 1  # Default user ID
+        favorites = db.get_user_favorites(user_id)
+
+        for row, stock_ticker in enumerate(favorites):
+            # Fetch stock data and prediction
+            stock_data = fetch_stock_data(stock_ticker)
+            if not stock_data:
+                continue
+                
+            current_price = stock_data.get('price', 0.0)
+            
+            # Get prediction data
+            from stock.stock_prediction import predict_stock
+            prediction_data = predict_stock(stock_ticker)
+            if not prediction_data:
+                prediction = "N/A"
+                target_price = current_price
+                score = 0.0
+            else:
+                prediction = prediction_data.get('prediction', 'N/A')
+                target_price = prediction_data.get('target_price', current_price)
+                score = prediction_data.get('score', 0.0)
+
+            # Add data to the table
+            self.favorites_table.insertRow(row)
+            self.favorites_table.setItem(row, 0, QTableWidgetItem(stock_ticker))
+            self.favorites_table.setItem(row, 1, QTableWidgetItem(f"₹{current_price:.2f}"))
+            
+            # Set prediction with color
+            pred_item = QTableWidgetItem(prediction)
+            if "Buy" in prediction:
+                pred_item.setForeground(Qt.GlobalColor.green)
+            elif "Sell" in prediction:
+                pred_item.setForeground(Qt.GlobalColor.red)
+            else:
+                pred_item.setForeground(Qt.GlobalColor.yellow)
+            self.favorites_table.setItem(row, 2, pred_item)
+            
+            # Target price
+            self.favorites_table.setItem(row, 3, QTableWidgetItem(f"₹{target_price:.2f}"))
+            
+            # Score with color
+            score_item = QTableWidgetItem(f"{score:+.2f}")
+            if score > 0:
+                score_item.setForeground(Qt.GlobalColor.green)
+            elif score < 0:
+                score_item.setForeground(Qt.GlobalColor.red)
+            else:
+                score_item.setForeground(Qt.GlobalColor.yellow)
+            self.favorites_table.setItem(row, 4, score_item)
+
+            # Add "Remove" button
+            remove_button = QPushButton("Remove")
+            remove_button.setStyleSheet(
+                "background-color: #d32f2f; color: white; font-weight: bold; padding: 5px 10px; border-radius: 3px;"
+            )
+            remove_button.clicked.connect(lambda _, s=stock_ticker: self.remove_favorite(s))
+            self.favorites_table.setCellWidget(row, 5, remove_button)
+
+    def remove_favorite(self, stock_ticker):
+        """Remove a stock from the favorites list."""
+        user_id = 1  # Default user ID
+        success = db.remove_from_favorites(user_id, stock_ticker)
+        if success:
+            QMessageBox.information(self, "Success", f"{stock_ticker} removed from favorites!")
+            self.load_favorites()
+        else:
+            QMessageBox.critical(self, "Error", f"Failed to remove {stock_ticker} from favorites.")

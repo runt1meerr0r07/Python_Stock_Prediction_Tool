@@ -3,8 +3,10 @@ from stock.ui.info_card import InfoCard
 from stock.models.utils import safe_compare, format_large_number
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QComboBox, QGridLayout, QFrame, QScrollArea)  
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QIcon, QPixmap
 from PyQt6 import QtWidgets
+import os
 
 class StockDetailPage(QWidget):
     def __init__(self, parent=None):
@@ -29,6 +31,28 @@ class StockDetailPage(QWidget):
         header_layout.addWidget(self.back_button)
         header_layout.addWidget(self.stock_header)
         header_layout.addStretch()
+        
+        # Add favorite button
+        self.favorite_button = QPushButton()
+        self.favorite_button.setFixedSize(32, 32)
+        self.favorite_button.setStyleSheet("""
+            QPushButton {
+                background-color: transparent;
+                border: none;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 255, 255, 0.1);
+                border-radius: 16px;
+            }
+        """)
+        
+        # Use the correct path to star icons
+        icon_path = os.path.join(os.path.dirname(__file__), 'icons', 'star_empty.png')
+        self.favorite_button.setIcon(QIcon(icon_path))
+        self.favorite_button.setIconSize(QSize(24, 24))
+        self.favorite_button.setToolTip("Add to Favorites")
+        self.favorite_button.clicked.connect(self.toggle_favorite)
+        header_layout.addWidget(self.favorite_button)
         
         from stock.db_manager import db
         user_balance = db.get_user_balance()
@@ -280,6 +304,7 @@ class StockDetailPage(QWidget):
     def load_stock(self, symbol):
         self.symbol = symbol
         self.update_stock_data()
+        self.update_favorite_button()  # Update the favorite button icon
     
     def update_stock_data(self):
         if not self.symbol:
@@ -423,3 +448,57 @@ class StockDetailPage(QWidget):
             self.stock_header.setText(f"Error loading {self.symbol}")
             self.price_label.setText("--")
             self.change_label.setText(f"Could not load {self.symbol}. Please check the symbol and try again.")
+    
+    def toggle_favorite(self):
+        """Toggle the favorite status of the current stock"""
+        if not self.symbol:
+            return
+            
+        try:
+            from stock.db_manager import db
+            user_id = 1  # Default user ID
+            
+            # Check current favorite status
+            is_favorite = db.is_favorite(user_id, self.symbol)
+            
+            if is_favorite:
+                # Remove from favorites
+                success = db.remove_from_favorites(user_id, self.symbol)
+                if success:
+                    empty_star_path = os.path.join(os.path.dirname(__file__), 'icons', 'star_empty.png')
+                    self.favorite_button.setIcon(QIcon(empty_star_path))
+                    self.favorite_button.setToolTip("Add to Favorites")
+            else:
+                # Add to favorites
+                success = db.add_to_favorites(user_id, self.symbol)
+                if success:
+                    filled_star_path = os.path.join(os.path.dirname(__file__), 'icons', 'star_filled.png')
+                    self.favorite_button.setIcon(QIcon(filled_star_path))
+                    self.favorite_button.setToolTip("Remove from Favorites")
+        except Exception as e:
+            print(f"Error toggling favorite status: {e}")
+    
+    def update_favorite_button(self):
+        """Update the favorite button icon based on the stock's favorite status"""
+        if not self.symbol:
+            return
+            
+        try:
+            from stock.db_manager import db
+            user_id = 1  # Default user ID
+            
+            # Check favorite status
+            is_favorite = db.is_favorite(user_id, self.symbol)
+            
+            if is_favorite:
+                filled_star_path = os.path.join(os.path.dirname(__file__), 'icons', 'star_filled.png')
+                self.favorite_button.setIcon(QIcon(filled_star_path))
+                self.favorite_button.setToolTip("Remove from Favorites")
+            else:
+                empty_star_path = os.path.join(os.path.dirname(__file__), 'icons', 'star_empty.png')
+                self.favorite_button.setIcon(QIcon(empty_star_path))
+                self.favorite_button.setToolTip("Add to Favorites")
+        except Exception as e:
+            print(f"Error updating favorite button: {e}")
+            empty_star_path = os.path.join(os.path.dirname(__file__), 'icons', 'star_empty.png')
+            self.favorite_button.setIcon(QIcon(empty_star_path))
