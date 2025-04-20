@@ -57,12 +57,29 @@ class DatabaseManager:
                 transaction_date TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES user(user_id)
             )''')
+            cursor.execute( '''CREATE TABLE IF NOT EXISTS stock_notes (
+                user_id INTEGER NOT NULL,
+                stock_ticker TEXT NOT NULL,
+                note TEXT,
+                PRIMARY KEY (user_id, stock_ticker),
+                FOREIGN KEY (user_id) REFERENCES user (user_id) ON DELETE CASCADE
+                 )''')
 
             # Create watchlist table
             cursor.execute('''CREATE TABLE IF NOT EXISTS watchlist (
                 watchlist_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER,
                 stock_ticker TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES user(user_id),
+                UNIQUE(user_id, stock_ticker)
+            )''')
+            
+            # Create favorites table
+            cursor.execute('''CREATE TABLE IF NOT EXISTS favorites (
+                favorite_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                stock_ticker TEXT NOT NULL,
+                added_date TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES user(user_id),
                 UNIQUE(user_id, stock_ticker)
             )''')
@@ -205,7 +222,73 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error registering user: {e}")
             return False
+        
+    def save_stock_note(self, user_id, stock_ticker, note):
+            """Save a note for a specific stock."""
+            try:
+                query = """
+                INSERT INTO stock_notes (user_id, stock_ticker, note)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, stock_ticker) DO UPDATE SET note = excluded.note
+                """
+                self.execute_query(query, (user_id, stock_ticker, note))
+                return True
+            except Exception as e:
+                print(f"Error saving note for {stock_ticker}: {e}")
+                return False
 
+        
+    def get_stock_note(self, user_id, stock_ticker):
+        """Retrieve the note for a specific stock."""
+        try:
+            query = "SELECT note FROM stock_notes WHERE user_id = ? AND stock_ticker = ?"
+            result = self.execute_query(query, (user_id, stock_ticker), fetch=True)
+            if result:
+                return result[0]['note']
+            return None
+        except Exception as e:
+            print(f"Error retrieving note for {stock_ticker}: {e}")
+            return None
+
+    def add_to_favorites(self, user_id, stock_ticker):
+        """Add a stock to favorites."""
+        try:
+            query = "INSERT INTO favorites (user_id, stock_ticker) VALUES (?, ?)"
+            self.execute_query(query, (user_id, stock_ticker))
+            return True
+        except Exception as e:
+            print(f"Error adding {stock_ticker} to favorites: {e}")
+            return False
+            
+    def remove_from_favorites(self, user_id, stock_ticker):
+        """Remove a stock from favorites."""
+        try:
+            query = "DELETE FROM favorites WHERE user_id = ? AND stock_ticker = ?"
+            self.execute_query(query, (user_id, stock_ticker))
+            return True
+        except Exception as e:
+            print(f"Error removing {stock_ticker} from favorites: {e}")
+            return False
+            
+    def is_favorite(self, user_id, stock_ticker):
+        """Check if a stock is in the user's favorites."""
+        try:
+            query = "SELECT * FROM favorites WHERE user_id = ? AND stock_ticker = ?"
+            result = self.execute_query(query, (user_id, stock_ticker), fetch=True)
+            return bool(result)
+        except Exception as e:
+            print(f"Error checking favorite status for {stock_ticker}: {e}")
+            return False
+            
+    def get_user_favorites(self, user_id=1):
+        """Get all favorite stocks for a user."""
+        try:
+            query = "SELECT stock_ticker FROM favorites WHERE user_id = ? ORDER BY added_date DESC"
+            result = self.execute_query(query, (user_id,), fetch=True)
+            return [item['stock_ticker'] for item in result] if result else []
+        except Exception as e:
+            print(f"Error getting favorites: {e}")
+            return []
 
 # Initialize database manager
 db = DatabaseManager()

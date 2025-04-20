@@ -1,20 +1,21 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                            QPushButton, QTabWidget, QTableWidget, QLineEdit, QTableWidgetItem,
-                           QHeaderView, QGridLayout)
+                           QHeaderView, QGridLayout, QFrame, QApplication, QAbstractItemView)
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtGui import QColor
 from stock.ui.info_card import InfoCard
 from stock.ui.market_widgets import MarketSummaryWidget
 from stock.ui.delegates import StockTableDelegate
 from stock.models.utils import format_large_number
+from stock.stockapi import fetch_stock_data
+from stock.stock_prediction import predict_stock
+from stock.ui.stock_chart import StockChart
 
 class MarketOverviewPage(QWidget):
     stock_selected = pyqtSignal(str)
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.init_ui()
-        
         self.nifty_stocks = [
             "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
             "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "BAJFINANCE.NS",
@@ -23,6 +24,13 @@ class MarketOverviewPage(QWidget):
         
         self.gainers = []
         self.losers = []
+        
+        # Create recommendation instances (set to None to avoid reference issues)
+        self.recommendation = None
+        self.risk = None
+        self.advance_decline = None
+        
+        self.init_ui()
         
         self.load_market_data()
         
@@ -86,86 +94,39 @@ class MarketOverviewPage(QWidget):
         
         main_layout.addLayout(header_layout)
         
-        summary_row = QHBoxLayout()
+        # Add recommendations and market summary section
+        indicators_section = QFrame()
+        indicators_section.setStyleSheet("background-color: #2a2e39; border: 1px solid #616161; border-radius: 5px;")
+        indicators_layout = QHBoxLayout(indicators_section)
         
+        # Market Summary widget (left side)
         self.market_summary = MarketSummaryWidget()
-        summary_row.addWidget(self.market_summary)
+        indicators_layout.addWidget(self.market_summary)
         
-        quick_view_layout = QVBoxLayout()
-        quick_view_label = QLabel("Quick Market View")
-        quick_view_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #e0e0e0;")
+        # Add the recommendation panels (right side)
+        self.recommendations_frame = self.create_recommendation_panels()
+        indicators_layout.addWidget(self.recommendations_frame)
         
-        quick_view_layout.addWidget(quick_view_label)
+        # Set stretch factors (30% for market summary, 70% for recommendations)
+        indicators_layout.setStretch(0, 3)  # Market summary takes 30%
+        indicators_layout.setStretch(1, 7)  # Recommendations take 70%
         
-        cards_layout = QHBoxLayout()
+        main_layout.addWidget(indicators_section)
         
-        self.advance_decline = InfoCard("Advance/Decline", "652 / 348")
-        self.top_gainer = InfoCard("Top Gainer", "MARUTI +3.2%", color="#00c853")
-        self.top_loser = InfoCard("Top Loser", "TATASTEEL -2.1%", color="#ff5252")
+        # Create tab widget for stock tables
+        self.tab_widget = QTabWidget()
+        self.tab_widget.setStyleSheet("background-color: #2a2e39; color: #e0e0e0;")
         
-        cards_layout.addWidget(self.advance_decline)
-        cards_layout.addWidget(self.top_gainer)
-        cards_layout.addWidget(self.top_loser)
+        # Create and add existing tabs
+        self.tab_widget.addTab(self.create_stock_table("POPULAR"), "Popular Stocks")
+        self.tab_widget.addTab(self.create_stock_table("GAINERS"), "Top Gainers")
+        self.tab_widget.addTab(self.create_stock_table("LOSERS"), "Top Losers")
         
-        quick_view_layout.addLayout(cards_layout)
-        summary_row.addLayout(quick_view_layout)
+        # Add new tabs for recommendations
+        self.tab_widget.addTab(self.create_recommendation_table("BUY"), "Top Buy Picks")
+        self.tab_widget.addTab(self.create_recommendation_table("SELL"), "Top Sell Picks")
         
-        main_layout.addLayout(summary_row)
-        
-        tabs = QTabWidget()
-        tabs.setStyleSheet("background-color: #2a2e39; color: #e0e0e0;")
-        
-        nifty_tab = QWidget()
-        nifty_layout = QVBoxLayout(nifty_tab)
-        
-        self.market_table = QTableWidget()
-        self.market_table.setColumnCount(5)
-        self.market_table.setHorizontalHeaderLabels(["Symbol", "Company", "Price", "Change", "Volume"])
-        self.market_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.market_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.market_table.setStyleSheet("background-color: #2a2e39; color: #e0e0e0;")
-        
-        delegate = StockTableDelegate()
-        self.market_table.setItemDelegate(delegate)
-        self.market_table.itemDoubleClicked.connect(self.on_table_item_clicked)
-        
-        nifty_layout.addWidget(self.market_table)
-        
-        gainers_tab = QWidget()
-        gainers_layout = QVBoxLayout(gainers_tab)
-        
-        self.gainers_table = QTableWidget()
-        self.gainers_table.setColumnCount(5)
-        self.gainers_table.setHorizontalHeaderLabels(["Symbol", "Company", "Price", "Change", "Volume"])
-        self.gainers_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.gainers_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.gainers_table.setStyleSheet("background-color: #2a2e39; color: #e0e0e0;")
-        
-        self.gainers_table.setItemDelegate(delegate)
-        self.gainers_table.itemDoubleClicked.connect(self.on_gainers_item_clicked)
-        
-        gainers_layout.addWidget(self.gainers_table)
-        
-        losers_tab = QWidget()
-        losers_layout = QVBoxLayout(losers_tab)
-        
-        self.losers_table = QTableWidget()
-        self.losers_table.setColumnCount(5)
-        self.losers_table.setHorizontalHeaderLabels(["Symbol", "Company", "Price", "Change", "Volume"])
-        self.losers_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.losers_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.losers_table.setStyleSheet("background-color: #2a2e39; color: #e0e0e0;")
-        
-        self.losers_table.setItemDelegate(delegate)
-        self.losers_table.itemDoubleClicked.connect(self.on_losers_item_clicked)
-        
-        losers_layout.addWidget(self.losers_table)
-        
-        tabs.addTab(nifty_tab, "NIFTY 50 Stocks")
-        tabs.addTab(gainers_tab, "Top Gainers")
-        tabs.addTab(losers_tab, "Top Losers")
-        
-        main_layout.addWidget(tabs)
+        main_layout.addWidget(self.tab_widget)
         self.setLayout(main_layout)
     
     def load_market_data(self):
@@ -201,18 +162,22 @@ class MarketOverviewPage(QWidget):
             self.losers_table.setRowCount(0)
             for symbol in self.losers:
                 self.add_stock_to_table(symbol, self.losers_table)
-                
-            if stock_changes:
-                top_gainer = stock_changes[0]
-                self.top_gainer.update_value(f"{top_gainer[0].split('.')[0]} +{top_gainer[1]:.2f}%", "#00c853")
-                
-                top_loser = stock_changes[-1]
-                self.top_loser.update_value(f"{top_loser[0].split('.')[0]} {top_loser[1]:.2f}%", "#ff5252")
+            
+            # We've removed the InfoCard references, so these lines should be removed
+            # or commented out since we now have recommendation panels instead
+            # if stock_changes:
+            #     top_gainer = stock_changes[0]
+            #     self.recommendation.update_value(f"{top_gainer[0].split('.')[0]} Buy", "#00c853")
+            #     
+            #     top_loser = stock_changes[-1]
+            #     self.risk.update_value(f"{top_loser[0].split('.')[0]} High", "#ff5252")
             
             self.calculate_market_sentiment()
             
         except Exception as e:
             print(f"Error loading market data: {e}")
+            import traceback
+            print(traceback.format_exc())
     
     def add_stock_to_table(self, symbol, table):
         try:
@@ -297,12 +262,14 @@ class MarketOverviewPage(QWidget):
     
     def calculate_market_sentiment(self):
         try:
+            # Get prediction-based sentiment from top 50 stocks
+            prediction_sentiment = self.calculate_prediction_sentiment()
             
+            # Get traditional price-based sentiment (bullish vs bearish count)
             bullish_count = 0
             bearish_count = 0
             neutral_count = 0
-            
-            
+           
             for i in range(self.market_table.rowCount()):
                 try:
                     change_text = self.market_table.item(i, 3).text()
@@ -314,17 +281,18 @@ class MarketOverviewPage(QWidget):
                         neutral_count += 1
                 except:
                     continue
-                    
-        
+                   
+                
             total_stocks = bullish_count + bearish_count + neutral_count
-            sentiment_percent = 50  
+            price_sentiment_percent = 50  
             if total_stocks > 0:
-                sentiment_percent = int((bullish_count / total_stocks) * 100)
+                price_sentiment_percent = int((bullish_count / total_stocks) * 100)
+            
+            # Combine both sentiment metrics (70% prediction-based, 30% price-based)
+            sentiment_percent = int((prediction_sentiment * 0.7) + (price_sentiment_percent * 0.3))
             
             if hasattr(self, 'market_summary') and hasattr(self.market_summary, 'sentiment_bar'):
-                
                 self.market_summary.sentiment_bar.setValue(sentiment_percent)
-                
                 
                 if sentiment_percent > 65:
                     sentiment_text = "Strongly Bullish"
@@ -342,23 +310,306 @@ class MarketOverviewPage(QWidget):
                     sentiment_text = "Strongly Bearish"
                     sentiment_color = "#ff5252"
                     
-                
                 self.market_summary.sentiment_bar.setFormat(
                     f"{sentiment_percent}% {sentiment_text} ({bullish_count}/{bearish_count}/{neutral_count})"
                 )
                 
-               
                 self.market_summary.sentiment_bar.setStyleSheet(
                     f"QProgressBar {{ background-color: #2a2e39; border: 1px solid #616161; border-radius: 5px; text-align: center; }} "
-                    f"QProgressBar::chunk {{ background-color: {sentiment_color}; border-radius: 5px; }}"
-                )
-                
-             
-                if hasattr(self, 'advance_decline'):
-                    self.advance_decline.update_value(f"{bullish_count} / {bearish_count} / {neutral_count}")
+                    f"QProgressBar::chunk {{ background-color: {sentiment_color}; border-radius: 5px; }}")
             
             return sentiment_percent
             
         except Exception as e:
             print(f"Error calculating market sentiment: {e}")
-            return 50  
+            return 50
+            
+    def calculate_prediction_sentiment(self):
+        """Calculate market sentiment based on top stocks' prediction scores"""
+        try:
+            # Use up to 50 top stocks from our list
+            sample_stocks = self.nifty_stocks[:50]
+            scores = []
+            
+            # Collect prediction scores
+            for symbol in sample_stocks:
+                data = fetch_stock_data(symbol)
+                if data:
+                    prediction = predict_stock(symbol)
+                    if prediction and 'score' in prediction:
+                        scores.append(prediction['score'])
+            
+            if not scores:
+                return 50  # Default neutral
+                
+            # Convert scores to sentiment percentage
+            # Scores range from -1 to 1, convert to 0-100 scale
+            avg_score = sum(scores) / len(scores)
+            sentiment_percent = int((avg_score + 1) * 50)  # Convert [-1,1] to [0,100]
+            
+            return sentiment_percent
+            
+        except Exception as e:
+            print(f"Error calculating prediction sentiment: {e}")
+            return 50
+
+    def create_recommendation_panels(self):
+        # Create the container frame for recommendations
+        recommendations_frame = QFrame()
+        recommendations_frame.setProperty("cardFrame", True)
+        recommendations_layout = QHBoxLayout(recommendations_frame)
+        
+        # Buy recommendation panel
+        buy_panel = QFrame()
+        buy_panel.setProperty("cardFrame", True)
+        buy_layout = QVBoxLayout(buy_panel)
+        
+        buy_header = QLabel("Top Buy Recommendation")
+        buy_header.setStyleSheet("font-size: 16px; font-weight: bold; color: #00b248;")
+        buy_layout.addWidget(buy_header)
+        
+        # Get buy recommendation
+        buy_stock = self.get_top_recommendation(recommendation_type="buy")
+        if buy_stock:
+            symbol, data = buy_stock
+            
+            # Add stock details
+            stock_info = QLabel(f"{symbol}: ₹{data['price']:.2f}")
+            stock_info.setStyleSheet("font-size: 18px; font-weight: bold;")
+            buy_layout.addWidget(stock_info)
+            
+            prediction_info = QLabel(f"Prediction: {data['prediction']['prediction']}")
+            prediction_info.setStyleSheet("color: #00b248;")
+            buy_layout.addWidget(prediction_info)
+            
+            target_price = QLabel(f"Target: ₹{data['prediction']['target_price']:.2f}")
+            buy_layout.addWidget(target_price)
+            
+            # Add mini chart
+            buy_chart = StockChart(width=3, height=2, dpi=80)
+            buy_chart.setMinimumHeight(120)
+            buy_chart.plot_stock_data(
+                data['historical_prices'][-24:] if len(data['historical_prices']) >= 24 else data['historical_prices'],
+                data['historical_dates'][-24:] if len(data['historical_dates']) >= 24 else data['historical_dates'],
+                symbol
+            )
+            buy_layout.addWidget(buy_chart)
+            
+            # Add Buy button
+            buy_button = QPushButton("Buy Now")
+            buy_button.setObjectName("buyButton")
+            buy_button.clicked.connect(lambda: self.stock_selected.emit(symbol))
+            buy_layout.addWidget(buy_button)
+        else:
+            buy_layout.addWidget(QLabel("No recommendation available"))
+        
+        # Sell recommendation panel (similar structure)
+        sell_panel = QFrame()
+        sell_panel.setProperty("cardFrame", True)
+        sell_layout = QVBoxLayout(sell_panel)
+        
+        sell_header = QLabel("Top Sell Recommendation")
+        sell_header.setStyleSheet("font-size: 16px; font-weight: bold; color: #d32f2f;")
+        sell_layout.addWidget(sell_header)
+        
+        # Get sell recommendation
+        sell_stock = self.get_top_recommendation(recommendation_type="sell")
+        if sell_stock:
+            symbol, data = sell_stock
+            
+            # Add stock details
+            stock_info = QLabel(f"{symbol}: ₹{data['price']:.2f}")
+            stock_info.setStyleSheet("font-size: 18px; font-weight: bold;")
+            sell_layout.addWidget(stock_info)
+            
+            prediction_info = QLabel(f"Prediction: {data['prediction']['prediction']}")
+            prediction_info.setStyleSheet("color: #d32f2f;")
+            sell_layout.addWidget(prediction_info)
+            
+            target_price = QLabel(f"Target: ₹{data['prediction']['target_price']:.2f}")
+            sell_layout.addWidget(target_price)
+            
+            # Add mini chart
+            sell_chart = StockChart(width=3, height=2, dpi=80)
+            sell_chart.setMinimumHeight(120)
+            sell_chart.plot_stock_data(
+                data['historical_prices'][-24:] if len(data['historical_prices']) >= 24 else data['historical_prices'],
+                data['historical_dates'][-24:] if len(data['historical_dates']) >= 24 else data['historical_dates'],
+                symbol
+            )
+            sell_layout.addWidget(sell_chart)
+            
+            # Add Sell button
+            sell_button = QPushButton("Sell Now")
+            sell_button.setObjectName("sellButton")
+            sell_button.clicked.connect(lambda: self.stock_selected.emit(symbol))
+            sell_layout.addWidget(sell_button)
+        else:
+            sell_layout.addWidget(QLabel("No recommendation available"))
+        
+        recommendations_layout.addWidget(buy_panel)
+        recommendations_layout.addWidget(sell_panel)
+        
+        return recommendations_frame
+
+    def get_top_recommendation(self, recommendation_type="buy"):
+        """Get the top buy or sell recommendation"""
+        try:
+            # Use your top stocks list from the existing code
+            stock_list = self.nifty_stocks
+            
+            results = []
+            for symbol in stock_list[:15]:  # Check the first 15 stocks
+                data = fetch_stock_data(symbol)
+                if data:
+                    prediction = predict_stock(symbol)
+                    if prediction:
+                        data['prediction'] = prediction
+                        score = prediction['score']
+                        
+                        if recommendation_type == "buy" and score > 0.15:
+                            results.append((symbol, data))
+                        elif recommendation_type == "sell" and score < -0.15:
+                            results.append((symbol, data))
+            
+            # Sort by score (absolute value for sell recommendations)
+            if recommendation_type == "buy":
+                results.sort(key=lambda x: x[1]['prediction']['score'], reverse=True)
+            else:
+                results.sort(key=lambda x: abs(x[1]['prediction']['score']), reverse=True)
+            
+            return results[0] if results else None
+        
+        except Exception as e:
+            print(f"Error getting recommendations: {e}")
+            return None
+
+    def create_stock_table(self, table_type="POPULAR"):
+        table = QTableWidget()
+        table.setColumnCount(5)
+        table.setHorizontalHeaderLabels(["Symbol", "Company", "Price", "Change %", "Volume"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setAlternatingRowColors(True)
+        
+        delegate = StockTableDelegate()
+        table.setItemDelegate(delegate)
+        
+        if table_type == "POPULAR":
+            self.market_table = table
+            table.itemDoubleClicked.connect(self.on_table_item_clicked)
+        elif table_type == "GAINERS":
+            self.gainers_table = table
+            table.itemDoubleClicked.connect(self.on_gainers_item_clicked)
+        elif table_type == "LOSERS":
+            self.losers_table = table
+            table.itemDoubleClicked.connect(self.on_losers_item_clicked)
+            
+        return table
+
+    def create_recommendation_table(self, table_type):
+        """Create a table for buy or sell recommendations"""
+        table = QTableWidget()
+        table.setColumnCount(6)
+        table.setHorizontalHeaderLabels(["Symbol", "Name", "Price", "Prediction", "Target", "Score"])
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table.verticalHeader().setVisible(False)
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setAlternatingRowColors(True)
+        
+        # Populate with recommendation data
+        self.populate_recommendation_table(table, table_type)
+        
+        # Connect selection signal
+        table.itemDoubleClicked.connect(lambda item: self.stock_selected.emit(table.item(item.row(), 0).text()))
+        
+        return table
+
+    def populate_recommendation_table(self, table, table_type):
+        """Populate the recommendation table with data"""
+        try:
+            stock_list = self.nifty_stocks
+            results = []
+            
+            # Show loading indicator
+            table.setRowCount(1)
+            loading_item = QTableWidgetItem("Loading recommendations...")
+            loading_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setSpan(0, 0, 1, 6)
+            table.setItem(0, 0, loading_item)
+            QApplication.processEvents()
+            
+            # Process stocks for recommendations
+            for symbol in stock_list[:30]:  # Check top 30 stocks
+                data = fetch_stock_data(symbol)
+                if data:
+                    prediction = predict_stock(symbol)
+                    if prediction:
+                        prediction_type = prediction['prediction']
+                        score = prediction['score']
+                        
+                        if (table_type == "BUY" and score > 0.15) or \
+                           (table_type == "SELL" and score < -0.15):
+                            results.append((symbol, data, prediction))
+            
+            # Sort by score
+            if table_type == "BUY":
+                results.sort(key=lambda x: x[2]['score'], reverse=True)
+            else:
+                results.sort(key=lambda x: x[2]['score'])
+            
+            # Take top 10
+            results = results[:10]
+            
+            # Clear loading indicator
+            table.clearSpans()
+            table.setRowCount(len(results))
+            
+            # Fill the table
+            for row, (symbol, data, prediction) in enumerate(results):
+                # Symbol
+                symbol_item = QTableWidgetItem(symbol)
+                table.setItem(row, 0, symbol_item)
+                
+                # Name
+                name = symbol.split('.')[0]
+                name_item = QTableWidgetItem(name)
+                table.setItem(row, 1, name_item)
+                
+                # Price
+                price = data.get('price', 0)
+                price_item = QTableWidgetItem(f"₹{price:.2f}")
+                price_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row, 2, price_item)
+                
+                # Prediction
+                pred_item = QTableWidgetItem(prediction['prediction'])
+                if "Buy" in prediction['prediction']:
+                    pred_item.setForeground(QColor('#00b248'))
+                elif "Sell" in prediction['prediction']:
+                    pred_item.setForeground(QColor('#d32f2f'))
+                table.setItem(row, 3, pred_item)
+                
+                # Target
+                target_item = QTableWidgetItem(f"₹{prediction['target_price']:.2f}")
+                target_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                table.setItem(row, 4, target_item)
+                
+                # Score
+                score_item = QTableWidgetItem(f"{prediction['score']:.2f}")
+                score_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if prediction['score'] > 0:
+                    score_item.setForeground(QColor('#00b248'))
+                else:
+                    score_item.setForeground(QColor('#d32f2f'))
+                table.setItem(row, 5, score_item)
+        
+        except Exception as e:
+            table.setRowCount(1)
+            error_item = QTableWidgetItem(f"Error loading recommendations: {e}")
+            error_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            table.setSpan(0, 0, 1, 6)
+            table.setItem(0, 0, error_item)

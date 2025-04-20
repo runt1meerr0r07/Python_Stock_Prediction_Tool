@@ -4,14 +4,14 @@ __pycache__/
 *$py.class
 */__pycache__/
 
+# Stock data cache files
+stock/cache/
+stock/cache/*.json
+
 # Environment variables
 .env
 .env.*
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
 
 # IDE files
 .vscode/
