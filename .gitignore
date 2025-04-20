@@ -12,10 +12,6 @@ stock/cache/*.json
 .env
 .env.*
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
 
 # IDE files
 .vscode/
