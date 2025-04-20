@@ -4,6 +4,10 @@ __pycache__/
 *$py.class
 */__pycache__/
 
+# Stock data cache files
+stock/cache/
+stock/cache/*.json
+
 # Environment variables
 .env
 .env.*
