@@ -155,7 +155,7 @@ class StockAdvisorApp(QMainWindow):
 
         self.header_layout.addStretch()
         self.buttons = {}
-        for name in ["Stock", "Portfolio", "News", "Notification"]:
+        for name in ["Stock", "Portfolio", "News"]:
             btn = QPushButton(name)
             btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             btn.setFlat(True)
