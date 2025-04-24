@@ -219,7 +219,7 @@ class StockDetailPage(QWidget):
         self.sma50_card = InfoCard("SMA 50")
         self.sma200_card = InfoCard("SMA 200")
         self.volume_card = InfoCard("Volume")
-        self.prediction_card = InfoCard("AI Prediction")
+        self.prediction_card = InfoCard("Recommendation")
         self.target_card = InfoCard("Target Price")
         self.score_card = InfoCard("Confidence Score")
 
@@ -423,8 +423,13 @@ class StockDetailPage(QWidget):
                 target_price = prediction.get('target_price')
                 if target_price is None:
                     target_price = self.current_price
+
+                if target_price > self.current_price:
+                    target_color = "#00c853"  # Green
+                else:
+                    target_color = "#ff5252"  # Red
                     
-                self.target_card.update_value(f"{self.currency}{target_price:.2f}")
+                self.target_card.update_value(f"{self.currency}{target_price:.2f}", target_color)
                 
                 
                 score = prediction.get("score", 0)
