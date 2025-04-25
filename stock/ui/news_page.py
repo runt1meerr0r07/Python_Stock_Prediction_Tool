@@ -1,122 +1,180 @@
-import tkinter as tk
-from tkinter import ttk
-import webbrowser
-from yahoo_fin import news
-import os
+from PyQt6 import QtWidgets, QtCore
+import requests
 
-class NewsWindow:
+
+class NewsWindow(QtWidgets.QWidget):
     def __init__(self):
-        self.window = tk.Toplevel()
-        self.window.title("Stock News")
-        self.window.configure(bg='#121212')
-        self.window.geometry("1000x720")
+        super().__init__()
+        self.setWindowTitle("Stock News")
+        self.resize(1000, 720)
+        self.setStyleSheet("background-color: #121212; color: white; font-size: 14px;")
+        self.showMaximized()
+        main_layout = QtWidgets.QVBoxLayout(self)
 
-        self.search_var = tk.StringVar()
-        
-        # Top Frame (for home and search bar)
-        top_frame = tk.Frame(self.window, bg="#121212")
-        top_frame.pack(fill="x", pady=10)
+        # Top bar
+        top_bar = QtWidgets.QHBoxLayout()
+        self.search_input = QtWidgets.QLineEdit()
+        self.search_input.setPlaceholderText("Search News...")
+        search_btn = QtWidgets.QPushButton("Search")
+        search_btn.clicked.connect(self.fetch_and_display_news)
 
-        # Home Button on the far right
-        home_button = tk.Button(top_frame, text="Home", font=("Arial", 11), bg="blue", fg="white", width=10,
-                                command=self.go_home)
-        home_button.pack(side="right", padx=(0, 30))
+        home_btn = QtWidgets.QPushButton("Home")
+        home_btn.setFixedHeight(40)  # Make Home button bigger
+        home_btn.setFixedWidth(100)
+        home_btn.clicked.connect(self.go_home)
 
-        # Sub-frame for centering search entry + button
-        search_frame = tk.Frame(top_frame, bg="#121212")
-        search_frame.pack(anchor="center")
+        top_bar.addWidget(self.search_input)
+        top_bar.addWidget(search_btn)
+        top_bar.addStretch()
+        top_bar.addWidget(home_btn)
 
-        # Search Bar
-        search_entry = tk.Entry(search_frame, textvariable=self.search_var, font=("Arial", 14), width=40)
-        search_entry.pack(side="left", padx=(0, 5))
+        main_layout.addLayout(top_bar)
 
-        # Search Button
-        search_button = tk.Button(search_frame, text="Search", command=self.fetch_and_display_news,
-                                  font=("Arial", 11), bg="red", fg="white", width=12)
-        search_button.pack(side="left")
+        # Scroll area
+        self.scroll_area = QtWidgets.QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_widget = QtWidgets.QWidget()
+        self.scroll_layout = QtWidgets.QVBoxLayout(self.scroll_widget)
+        self.scroll_area.setWidget(self.scroll_widget)
 
-        
+        main_layout.addWidget(self.scroll_area)
 
-      
-        # Canvas for scrollable content
-        self.canvas = tk.Canvas(self.window, bg="#121212", highlightthickness=0)
-        self.scrollbar = ttk.Scrollbar(self.window, orient="vertical", command=self.canvas.yview)
-
-        self.scroll_frame = tk.Frame(self.canvas, bg="#121212")
-        self.scroll_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(
-                scrollregion=self.canvas.bbox("all")
-            )
-        )
-
-        self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
-
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
-
+        # Categories
         self.CATEGORIES = {
-            "Market Updates": ["market", "index", "indices", "nifty", "sensex", "dow", "nasdaq", "bse"],
-            "Investing": ["investment", "investor", "portfolio", "mutual fund", "etf"],
-            "Company News": ["earnings", "revenue", "profit", "loss", "acquisition", "merger"],
-            "Regulations": ["rbi", "sebi", "regulation", "policy", "interest rate"],
-            "Economy": ["gdp", "inflation", "economy", "economic", "budget", "fiscal"],
-            "Crypto": ["bitcoin", "crypto", "blockchain", "ethereum"],
-            "Banking": ["bank", "loan", "credit", "finance", "nbfc"]
+            "MARKET UPDATES": ["market", "index", "indices", "nifty", "sensex", "dow", "nasdaq", "bse"],
+            "INVESTING": ["investment", "investor", "portfolio", "mutual fund", "etf"],
+            "COMPANY NEWS": ["earnings", "revenue", "profit", "loss", "acquisition", "merger"],
+            "REGULATIONS": ["rbi", "sebi", "regulation", "policy", "interest rate"],
+            "ECONOMY": ["gdp", "inflation", "economy", "economic", "budget", "fiscal"],
+            "CRYPTO": ["bitcoin", "crypto", "blockchain", "ethereum"],
+            "BANKING": ["bank", "loan", "credit", "finance", "nbfc"]
         }
 
         self.fetch_and_display_news()
+
+    def fetch_and_display_news(self):
+        query = self.search_input.text().lower()
+
+        for i in reversed(range(self.scroll_layout.count())):
+            widget = self.scroll_layout.itemAt(i).widget()
+            if widget:
+                widget.setParent(None)
+
+        api_key = "pub_82776bf0a4a26c7a0a022d6600029be29e0e1"
+        url = f"https://newsdata.io/api/1/news?apikey={api_key}&country=in&category=business&language=en"
+
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    articles = data.get("results", [])
+                except Exception:
+                    self.scroll_layout.addWidget(QtWidgets.QLabel("Error parsing news data."))
+                    return
+
+                filtered_articles = [a for a in articles if query in a["title"].lower()] if query else articles
+                categorized = {}
+                others = []
+
+                for article in filtered_articles:
+                    category = self.categorize_news(article["title"])
+                    if category == "OTHERS":
+                        others.append(article)
+                    else:
+                        categorized.setdefault(category, []).append(article)
+
+                # Add categorized articles
+                for category, articles in categorized.items():
+                    group_box = QtWidgets.QGroupBox(category)
+                    group_box.setStyleSheet("QGroupBox { font-weight: bold; color: #8bc34a; font-size: 16px; }")
+                    vbox = QtWidgets.QVBoxLayout()
+                    for article in articles:
+                        title = article.get("title", "Untitled")
+                        link = article.get("link", "#")
+
+                        link_frame = QtWidgets.QFrame()
+                        link_frame.setStyleSheet("""
+                            QFrame {
+                                background-color: #1e1e1e;
+                                border: 1px solid #2e2e2e;
+                                border-radius: 8px;
+                                padding: 8px;
+                                margin-bottom: 6px;
+                            }
+                        """)
+                        link_layout = QtWidgets.QVBoxLayout(link_frame)
+                        link_layout.setContentsMargins(8, 4, 8, 4)
+
+                        link_label = QtWidgets.QLabel(f'<a style="color: white;" href="{link}">{title}</a>')
+                        link_label.setOpenExternalLinks(True)
+                        link_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextBrowserInteraction)
+                        link_label.setStyleSheet("font-size: 13px;")
+
+                        link_layout.addWidget(link_label)
+                        vbox.addWidget(link_frame)
+
+                    group_box.setLayout(vbox)
+                    self.scroll_layout.addWidget(group_box)
+
+                # Add others section last
+                if others:
+                    group_box = QtWidgets.QGroupBox("OTHERS")
+                    group_box.setStyleSheet("QGroupBox { font-weight: bold; color: #8bc34a; font-size: 16px; }")
+                    vbox = QtWidgets.QVBoxLayout()
+                    for article in others:
+                        title = article.get("title", "Untitled")
+                        link = article.get("link", "#")
+
+                        link_frame = QtWidgets.QFrame()
+                        link_frame.setStyleSheet("""
+                            QFrame {
+                                background-color: #1e1e1e;
+                                border: 1px solid #2e2e2e;
+                                border-radius: 8px;
+                                padding: 8px;
+                                margin-bottom: 6px;
+                            }
+                        """)
+                        link_layout = QtWidgets.QVBoxLayout(link_frame)
+                        link_layout.setContentsMargins(8, 4, 8, 4)
+
+                        link_label = QtWidgets.QLabel(f'<a style="color: white;" href="{link}">{title}</a>')
+                        link_label.setOpenExternalLinks(True)
+                        link_label.setTextInteractionFlags(QtCore.Qt.TextInteractionFlag.TextBrowserInteraction)
+                        link_label.setStyleSheet("font-size: 13px;")
+
+                        link_layout.addWidget(link_label)
+                        vbox.addWidget(link_frame)
+
+                    group_box.setLayout(vbox)
+                    self.scroll_layout.addWidget(group_box)
+
+                if not filtered_articles:
+                    self.scroll_layout.addWidget(QtWidgets.QLabel("No matching news found."))
+
+            else:
+                self.scroll_layout.addWidget(QtWidgets.QLabel("⚠️ Error fetching news."))
+
+        except Exception:
+            self.scroll_layout.addWidget(QtWidgets.QLabel("Network error occurred."))
 
     def categorize_news(self, title):
         title_lower = title.lower()
         for category, keywords in self.CATEGORIES.items():
             if any(keyword in title_lower for keyword in keywords):
                 return category
-        return "Other"
-
-    def fetch_and_display_news(self):
-        query = self.search_var.get().lower()
-        for widget in self.scroll_frame.winfo_children():
-            widget.destroy()
-
-        try:
-            articles = news.get_yf_rss("AAPL")
-        except Exception as e:
-            tk.Label(self.scroll_frame, text="Error fetching news", fg="red", bg="#121212").pack()
-            return
-
-        filtered_articles = [a for a in articles if query in a["title"].lower()] if query else articles
-
-        categorized = {}
-        for article in filtered_articles:
-            category = self.categorize_news(article["title"])
-            if category not in categorized:
-                categorized[category] = []
-            categorized[category].append(article)
-
-        ordered_categories = [cat for cat in self.CATEGORIES] + ["Other"]
-
-        for category in ordered_categories:
-            if category in categorized:
-                section_frame = tk.Frame(self.scroll_frame, bg="#121212")
-                section_frame.pack(anchor="center", fill="x", pady=(20, 5))
-
-                tk.Label(section_frame, text=category, font=("Arial", 20, "bold"),
-                         fg="white", bg="#121212").pack(anchor="w", padx=80, pady=(0, 10))
-
-                for article in categorized[category]:
-                    card = tk.Frame(section_frame, bg="#1e1e1e", bd=1, relief="solid", padx=10, pady=10)
-                    card.pack(padx=80, pady=8, ipadx=5, ipady=5, fill="x")
-
-                    title_label = tk.Label(card, text=article["title"], font=("Arial", 14, "bold"),
-                                           fg="white", bg="#1e1e1e", wraplength=800, justify="left", cursor="hand2")
-                    title_label.pack(fill="x")
-                    title_label.bind("<Button-1>", lambda e, url=article["link"]: webbrowser.open(url))
+        return "OTHERS"
 
     def go_home(self):
-        self.window.destroy()
-        os.system("python test.py")  # or provide full path if needed
+        self.close()
 
-def open_news_page():
-    NewsWindow()
+
+if __name__ == "__main__":
+    import sys
+    from PyQt6.QtWidgets import QApplication
+
+    app = QApplication(sys.argv)
+    window = NewsWindow()
+    window.showMaximized()
+    sys.exit(app.exec())

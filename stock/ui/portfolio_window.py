@@ -15,7 +15,7 @@ class PortfolioWindow(QDialog):
         self.setWindowTitle("Portfolio")
         self.resize(900, 600)  # Set an initial size
         self.setStyleSheet("background-color: #2a2e39; color: #e0e0e0;")
-
+        self.showMaximized()
         # Enable resizing by setting the appropriate window flags
         self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.Window)
 
@@ -247,6 +247,25 @@ class PortfolioWindow(QDialog):
         # Update balance and total assets after loading portfolio
         self.update_balance_and_assets()
 
+    def get_balance(self):
+        """Return the current balance value."""
+        user_id = 1  # Replace with dynamic ID if needed
+        return db.get_user_balance(user_id)
+
+    def get_total_assets(self):
+        """Calculate and return total assets."""
+        user_id = 1  # Replace with dynamic ID if needed
+        balance = db.get_user_balance(user_id)
+        holdings = db.get_user_holdings(user_id)
+
+        total_assets = balance
+        for holding in holdings:
+            stock_ticker = holding['stock_ticker']
+            quantity = holding['shares']
+            current_price = self.get_current_price(stock_ticker)
+            total_assets += quantity * current_price
+
+        return total_assets
     def add_note_for_stock(self, stock_ticker):
         """Add a note for a specific stock."""
         user_id = 1  # Replace with dynamic user ID if needed

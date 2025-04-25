@@ -22,6 +22,7 @@ from PyQt6.QtGui import QFont, QCursor, QPixmap
 from PyQt6.QtCore import Qt, QTimer
 
 from stock.ui.portfolio_window import PortfolioWindow  
+from stock.ui.news_page import NewsWindow
 
 themes = {
     "light": {
@@ -413,11 +414,12 @@ class StockAdvisorApp(QMainWindow):
         v_layout.addWidget(canvas)
 
         return widget
-
-
-    
+ 
     def create_marquee(self):
-        self.marquee = QLabel("Stock Market Updates: ICICIBANK +3.17% | TATASE=TEEL -0.12% | SBIN +3.33%")
+        portfolio_window = PortfolioWindow()
+        balance = portfolio_window.get_balance()
+        assets = portfolio_window.get_total_assets()
+        self.marquee = QLabel(f" Balance: ₹{balance:,.2f}  ...  Total Assets: ₹{assets:,.2f}")
         self.marquee.setFixedHeight(30)
         self.marquee.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.main_layout.addWidget(self.marquee)
@@ -453,7 +455,12 @@ class StockAdvisorApp(QMainWindow):
         if name == "Stock":
             threading.Thread(target=self.launch_stock_dashboard).start()
         elif name == "News":
-            self.stack.setCurrentWidget(self.news_page)
+            print("News clicked")
+            try:
+                self.news_window = NewsWindow()
+                self.news_window.show()
+            except Exception as e:
+                print(f"Error: {e}")
         elif name == "Portfolio":
             print("Portfolio clicked")
             try:

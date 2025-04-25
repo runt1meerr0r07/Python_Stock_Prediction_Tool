@@ -10,6 +10,7 @@ class StockDashboard(QWidget):
         self.setWindowTitle("Indian Stock Market Dashboard")
         self.setGeometry(100, 100, 1300, 900)
         self.init_ui()
+        self.showMaximized()
         
     def init_ui(self):
         self.setStyleSheet("""
