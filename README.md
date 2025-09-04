@@ -1,4 +1,4 @@
-# PortfolioTracker
+# Python Stock Prediction Tool
 
 A **desktop stock prediction and tracking app** built with **PyQt6** and **SQLite3**. The app provides **technical analysis-based predictions** using **Bollinger Bands, RSI, Moving Averages, Volume indicators**, and **live data & news**. It helps users make informed decisions on buying, selling, or holding stocks.
 
@@ -90,8 +90,8 @@ A **desktop stock prediction and tracking app** built with **PyQt6** and **SQLit
 
 ```bash
 # Clone the repo
-git clone git@github-secondary:SecondaryAccount/PortfolioTracker.git
-cd PortfolioTracker
+git clone git@github.com:runt1meerr0r07/Python_Stock_Prediction_Tool.git
+cd Python_Stock_Prediction_Tool
 
 # Install dependencies
 pip install PyQt6 pandas numpy matplotlib yfinance requests
